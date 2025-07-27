@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 from app.database.database import init_database, close_database, engine
 from app.handlers import start
@@ -102,7 +103,7 @@ def create_app() -> web.Application:
         try:
             me = await bot.get_me()
             async with engine.begin() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             return web.json_response({
                 "status": "healthy",
                 "bot": {
