@@ -24,19 +24,11 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     
     return keyboard.as_markup()
 
-def operation_type_keyboard() -> InlineKeyboardMarkup:
-    """Выбор типа операции"""
-    keyboard = InlineKeyboardBuilder()
-    
-    keyboard.row(
-        InlineKeyboardButton(text="💰 Доход", callback_data="type_income"),
-        InlineKeyboardButton(text="💸 Расход", callback_data="type_expense")
-    )
-    keyboard.row(
-        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
-    )
-    
-    return keyboard.as_markup()
+def operations_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("Добавить доход", callback_data="add_income")],
+        [InlineKeyboardButton("Добавить расход", callback_data="add_expense")],
+    ])
 
 def categories_keyboard(categories: List[dict], operation_type: str = "expense") -> InlineKeyboardMarkup:
     """Клавиатура выбора категории"""
