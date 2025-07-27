@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
@@ -10,14 +11,15 @@ from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, Telegra
 from aiogram.types import Update, Message
 
 from dotenv import load_dotenv
+import aiohttp
 
-# ─────────────── Загрузка окружения ───────────────
+# ────────
 load_dotenv("/var/www/finbot/.env")
 
-BOT_TOKEN     = os.getenv("BOT_TOKEN")
-WEBHOOK_PATH  = os.getenv("WEBHOOK_PATH")
-DOMAIN        = os.getenv("DOMAIN")
-WEBHOOK_URL   = f"{DOMAIN}{WEBHOOK_PATH}"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
+DOMAIN = os.getenv("DOMAIN")
+WEBHOOK_URL = f"{DOMAIN}{WEBHOOK_PATH}"
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 if not all([BOT_TOKEN, WEBHOOK_PATH, DOMAIN]):
@@ -60,32 +62,76 @@ async def cmd_start(message: Message):
     logging.info(f"Обрабатываю /start от пользователя {message.from_user.id}")
     await message.answer("Привет! Я твой финансовый бот.")
 
+# ─────────────── Функция установки webhook ───────────────
+async def _ensure_webhook():
+    """Устанавливает webhook с повторными попытками и обработкой ошибок"""
+    MAX_RETRIES = 5
+    
+    try:
+        info = await bot.get_webhook_info()
+        if info.url == WEBHOOK_URL:
+            logging.info("Webhook уже установлен")
+            return
+
+        # Удаляем старый webhook только если он установлен
+        if info.url:
+            await bot.delete_webhook(drop_pending_updates=True)
+            logging.info("Старый webhook удален")
+
+        # Попытки установки нового webhook
+        for attempt in range(1, MAX_RETRIES + 1):
+            wait = 1  # значение по умолчанию
+            
+            try:
+                await bot.set_webhook(
+                    WEBHOOK_URL,
+                    secret_token=WEBHOOK_SECRET,
+                    drop_pending_updates=True,
+                )
+                logging.info("Webhook установлен: %s", WEBHOOK_URL)
+                return
+                
+            except TelegramRetryAfter as e:
+                wait = getattr(e, "retry_after", 1)
+                logging.warning("Flood limit exceeded, retry after %s s", wait)
+                
+            except (TelegramNetworkError, aiohttp.ClientError) as e:
+                wait = min(2 ** attempt, 60)  # экспоненциальный бэк-офф с лимитом
+                logging.warning("Сетевая ошибка при установке webhook: %s", e)
+                
+            except TelegramBadRequest as e:
+                logging.error("BadRequest при установке webhook: %s", e)
+                break  # нет смысла повторять при ошибке запроса
+
+            if attempt < MAX_RETRIES:
+                logging.warning("Повтор %d/%d через %s с", attempt, MAX_RETRIES, wait)
+                await asyncio.sleep(wait)
+
+        logging.error("Webhook так и не установлен после %d попыток", MAX_RETRIES)
+        
+    except Exception as e:
+        logging.error("Неожиданная ошибка при настройке webhook: %s", e)
+
+# ─────────────── Lifespan manager ───────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await _ensure_webhook()
+    yield
+    # Shutdown
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+    finally:
+        await bot.session.close()
+    for handler in root_logger.handlers:
+        handler.close()
+
 # ─────────────── FastAPI-приложение ───────────────
-app = FastAPI(title="Финансовый Telegram Бот")
+app = FastAPI(title="Финансовый Telegram Бот", lifespan=lifespan)
 
 @app.get("/")
 async def root():
     return {"message": "Финансовый бот работает", "status": "ok"}
-
-@app.on_event("startup")
-async def on_startup():
-    # Устанавливаем webhook (сброс накопленных обновлений)
-    try:
-        info = await bot.get_webhook_info()
-        current_url = info.url or ""
-        if current_url != WEBHOOK_URL:
-            await bot.delete_webhook(drop_pending_updates=True)
-            for _ in range(3):
-                try:
-                    await bot.set_webhook(WEBHOOK_URL, secret_token=WEBHOOK_SECRET, drop_pending_updates=True)
-                    logging.info("Webhook установлен: %s", WEBHOOK_URL)
-                    break
-                except TelegramRetryAfter as e:
-                    wait = getattr(e, "retry_after", 1)
-                    logging.warning("Flood limit exceeded, retry after %s s", wait)
-                    await asyncio.sleep(wait)
-    except TelegramBadRequest as e:
-        logging.error("Не удалось установить webhook: %s", e)
 
 @app.post(WEBHOOK_PATH)
 async def handle_webhook(
@@ -96,6 +142,7 @@ async def handle_webhook(
     if WEBHOOK_SECRET and x_telegram_bot_api_secret_token != WEBHOOK_SECRET:
         logging.warning("Запрос к webhook с некорректным секретом")
         raise HTTPException(status_code=403, detail="Forbidden")
+    
     try:
         payload = await request.json()
         update_id = payload.get("update_id", "unknown")
@@ -103,27 +150,19 @@ async def handle_webhook(
         update = Update(**payload)
         await dp.feed_update(bot, update)
         return {"ok": True}
+        
     except TelegramBadRequest as e:
         logging.error("TelegramBadRequest при обработке webhook: %s", e)
         return {"ok": False, "error": str(e)}
+        
     except Exception as e:
         logging.exception("Неожиданная ошибка при webhook: %s", e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    # Снимаем webhook и закрываем сессию
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-    finally:
-        await bot.session.close()
-    for handler in root_logger.handlers:
-        handler.close()
-
 @app.get("/health")
 async def health_check():
     try:
-        me   = await bot.get_me()
+        me = await bot.get_me()
         info = await bot.get_webhook_info()
         return {
             "status": "ok",
