@@ -1,24 +1,17 @@
-from aiogram import Router, types
-from aiogram.filters import Command, Text
+from aiogram import Router, types, F
+from aiogram.filters import Command
 from app.database.crud import OperationCRUD
 
 router = Router()
 
+# Команда /add
 @router.message(Command("add"))
-async def add_command(message: types.Message):
-    await message.answer("Напишите операцию в формате:\n`+5000 зарплата` или `1200 обед`", parse_mode="Markdown")
+async def cmd_add(message: types.Message):
+    await message.answer("Выберите тип операции:", reply_markup=operations_keyboard())
 
-@router.message(Text(startswith="+") | Text(regex=r"^\d"))
-async def quick_add(message: types.Message, db):
-    # Простейший парсер
-    parts = message.text.split(maxsplit=1)
-    amount = parts[0]
-    description = parts[1] if len(parts) > 1 else ""
-    kind = "income" if amount.startswith("+") else "expense"
-    await OperationCRUD(db).create(
-        user_id=message.from_user.id,
-        amount=amount.strip("+"),
-        kind=kind,
-        description=description
-    )
-    await message.answer("Операция добавлена.")
+# Обработчик кнопок
+@router.callback_query(F.data.in_(["add_income", "add_expense"]))
+async def cb_add(callback: types.CallbackQuery, db):
+    kind = "income" if callback.data == "add_income" else "expense"
+    await callback.message.answer(f"Ввод {kind}…")
+    await callback.answer()
