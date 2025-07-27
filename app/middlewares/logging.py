@@ -70,6 +70,3 @@ class LoggingMiddleware(BaseMiddleware):
             
             # Переподнимаем исключение
             raise
-        finally:
-            # Всегда пропускаем событие дальше, даже если было исключение в логике логирования
-            return await handler(event, data)
