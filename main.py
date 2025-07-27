@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.exceptions import TelegramRetryAfter, TelegramBadRequest
+from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramBadRequest
 from aiogram.types import Update, Message
 
 from dotenv import load_dotenv
