@@ -79,6 +79,8 @@ def setup_handlers():
     dp.include_router(cancel_router)
     logger.info("Обработчики Telegram-бота зарегистрированы")
 
+setup_handlers()
+
 # 6. Хэндлеры старта и завершения AioHTTP-приложения
 async def on_startup(app: web.Application):
     logger.info("on_startup: инициализация БД")
@@ -93,8 +95,6 @@ async def on_startup(app: web.Application):
             drop_pending_updates=True
         )
         logger.info(f"Webhook установлен: {webhook_url}")
-
-    setup_handlers()
 
 async def on_cleanup(app: web.Application):
     logger.info("on_cleanup: завершение приложения")

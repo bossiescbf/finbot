@@ -1,9 +1,9 @@
-from aiogram import types
+from aiogram import BaseMiddleware, types
 from loguru import logger
 from app.database.database import get_async_session
 
-class AuthMiddleware:
-    async def __call__(self, handler, event: types.Update, data: dict):
+class AuthMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event: types.TelegramObject, data: dict):
         """
         Middleware для проверки аутентификации и передачи сессии БД.
         event — объект aiogram.types.Update
