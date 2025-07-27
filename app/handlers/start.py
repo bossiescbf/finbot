@@ -210,11 +210,9 @@ async def status_command(message: Message):
         )
 
 # Обработчик неизвестных команд
-@router.message(Command())
+@router.message(F.text.startswith("/"))
 async def unknown_command(message: Message):
-    """Обработчик неизвестных команд"""
     command = message.text.split()[0]
-    
     await message.answer(
         f"❓ Неизвестная команда: <code>{command}</code>\n\n"
         "Используй /help для просмотра всех доступных команд.",

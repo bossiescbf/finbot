@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserBase(BaseModel):
@@ -10,24 +10,21 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    pass  # все поля UserBase обязательны при создании
+    pass
 
 
 class UserUpdate(BaseModel):
-    """Поля, которые можно обновить"""
     username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
 
 
 class UserInDB(UserBase):
+    model_config = ConfigDict(from_attributes=True)  # ← НОВЫЙ синтаксис V2
+    
     id: int = Field(..., description="PK в БД")
     created_at: datetime = Field(..., description="Время создания записи")
 
-    class Config:
-        orm_mode = True
-
 
 class UserOut(UserInDB):
-    """То, что возвращаем клиенту"""
     pass

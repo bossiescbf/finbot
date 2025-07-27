@@ -1,8 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class OperationKind(str, Enum):
@@ -18,7 +17,7 @@ class OperationBase(BaseModel):
 
 
 class OperationCreate(OperationBase):
-    pass  # все поля обязательны
+    pass
 
 
 class OperationUpdate(BaseModel):
@@ -29,14 +28,12 @@ class OperationUpdate(BaseModel):
 
 
 class OperationInDB(OperationBase):
+    model_config = ConfigDict(from_attributes=True)  # ← НОВЫЙ синтаксис V2
+    
     id: int = Field(..., description="PK операции")
     user_id: int = Field(..., description="ID пользователя")
     ts: datetime = Field(..., description="Время создания операции")
 
-    class Config:
-        orm_mode = True
-
 
 class OperationOut(OperationInDB):
-    """То, что возвращаем клиенту"""
     pass
