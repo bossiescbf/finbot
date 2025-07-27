@@ -13,11 +13,15 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 
 from app.database.database import init_database, close_database, engine
-from app.handlers import (
-    start_router, help_router, balance_router,
-    operations_router, reports_router,
-    categories_router, settings_router, cancel_router
-)
+from app.handlers.start import router as start_router
+from app.handlers.help import router as help_router
+from app.handlers.balance import router as balance_router
+from app.handlers.operations import router as operations_router
+from app.handlers.reports import router as reports_router
+from app.handlers.categories import router as categories_router
+from app.handlers.settings import router as settings_router
+from app.handlers.cancel import router as cancel_router
+
 from app.middlewares.auth import AuthMiddleware
 from app.middlewares.logging import LoggingMiddleware
 
