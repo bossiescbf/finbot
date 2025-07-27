@@ -7,6 +7,7 @@ router = Router()
 
 @router.message(Command("cancel"))
 async def cancel_command(message: types.Message, state: FSMContext) -> None:
+    # Получаем текущее состояние FSM
     current_state = await state.get_state()
     if current_state is None:
         await message.answer(
@@ -15,6 +16,7 @@ async def cancel_command(message: types.Message, state: FSMContext) -> None:
         )
         return
 
+    # Правильный вызов очистки состояния
     await state.clear()
     await message.answer(
         "✅ Действие отменено. Возвращаемся в главное меню.",
@@ -23,6 +25,7 @@ async def cancel_command(message: types.Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("cancel"))
 async def cancel_callback(callback: types.CallbackQuery, state: FSMContext) -> None:
+    # Правильный вызов очистки состояния
     await state.clear()
     await callback.message.edit_text(
         "✅ Действие отменено. Возвращаемся в главное меню.",
