@@ -1,6 +1,5 @@
 import asyncio, logging, os
 from aiohttp import web
-from aiohttp_asgi import ASGIHandler
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -97,9 +96,6 @@ def create_app() -> web.Application:
     app.router.add_get("/", lambda r: web.Response(text="FinBot is running!"))
     return app
 
-aio_app = create_app()
-app = ASGIHandler(aio_app)
-
 async def main():
     if DOMAIN:
         logger.info("Webhook mode")
@@ -117,6 +113,16 @@ async def main():
             await close_database()
             await storage.close()
             await bot.session.close()
+
+def make_app():
+    """
+    Фабрика для systemd-юнита uvicorn.service,
+    который будет вызывать main:make_app как ASGI-функцию.
+    """
+    return create_app()
+
+# ASGI-приложение для uvicorn: main:app (alias на make_app)
+app = make_app
 
 if __name__ == "__main__":
     try:
