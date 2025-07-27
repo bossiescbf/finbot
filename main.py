@@ -1,175 +1,233 @@
-import os
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException, Header
-from fastapi.responses import JSONResponse
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramBadRequest
-from aiogram.types import Update, Message
-
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 from dotenv import load_dotenv
-import aiohttp
 
-# ────────
-load_dotenv("/var/www/finbot/.env")
+# Загружаем переменные окружения
+load_dotenv()
 
+# Импорты приложения
+from app.database.database import init_database, close_database
+from app.handlers import start
+# from app.handlers import operations, categories, reports, settings
+from app.middlewares.auth import AuthMiddleware
+from app.middlewares.logging import LoggingMiddleware
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/var/log/finbot/app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Конфигурация
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
-DOMAIN = os.getenv("DOMAIN")
-WEBHOOK_URL = f"{DOMAIN}{WEBHOOK_PATH}"
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/telegram/webhook")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+DOMAIN = os.getenv("DOMAIN")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-if not all([BOT_TOKEN, WEBHOOK_PATH, DOMAIN]):
-    raise RuntimeError("Отсутствуют обязательные переменные среды в .env")
+# Проверка обязательных переменных
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не установлен в переменных окружения")
 
-# ─────────────── Настройка логирования ───────────────
-LOG_DIR = "/var/log/finbot"
-os.makedirs(LOG_DIR, exist_ok=True)
+if not WEBHOOK_SECRET:
+    raise ValueError("WEBHOOK_SECRET не установлен в переменных окружения")
 
-LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
-DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+# Создание бота и диспетчера
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(
+        parse_mode=ParseMode.HTML
+    )
+)
 
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
+# Выбор хранилища состояний
+try:
+    # Пытаемся использовать Redis для хранения состояний
+    storage = RedisStorage.from_url(REDIS_URL)
+    logger.info("Используется Redis для хранения состояний FSM")
+except Exception as e:
+    logger.warning(f"Не удалось подключиться к Redis: {e}. Используется память.")
+    storage = MemoryStorage()
 
-# вывод в stdout (journal)
-stdout_handler = logging.StreamHandler()
-stdout_handler.setLevel(logging.INFO)
-stdout_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
-root_logger.addHandler(stdout_handler)
+dp = Dispatcher(storage=storage)
 
-# файл app.log для INFO+
-app_file = logging.FileHandler(os.path.join(LOG_DIR, "app.log"))
-app_file.setLevel(logging.INFO)
-app_file.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
-root_logger.addHandler(app_file)
-
-# файл error.log для ERROR+
-err_file = logging.FileHandler(os.path.join(LOG_DIR, "error.log"))
-err_file.setLevel(logging.ERROR)
-err_file.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
-root_logger.addHandler(err_file)
-
-# ─────────────── Инициализация бота и диспетчера ───────────────
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-
-@dp.message(Command("start"))
-async def cmd_start(message: Message):
-    logging.info(f"Обрабатываю /start от пользователя {message.from_user.id}")
-    await message.answer("Привет! Я твой финансовый бот.")
-
-# ─────────────── Функция установки webhook ───────────────
-async def _ensure_webhook():
-    """Устанавливает webhook с повторными попытками и обработкой ошибок"""
-    MAX_RETRIES = 5
+@asynccontextmanager
+async def lifespan(app: web.Application):
+    """Управление жизненным циклом приложения"""
+    # Запуск
+    logger.info("Запуск приложения...")
     
+    # Инициализация базы данных
+    await init_database()
+    logger.info("База данных инициализирована")
+    
+    # Установка webhook
+    if DOMAIN:
+        webhook_url = f"{DOMAIN}{WEBHOOK_PATH}"
+        await bot.set_webhook(
+            url=webhook_url,
+            secret_token=WEBHOOK_SECRET,
+            allowed_updates=dp.resolve_used_update_types(),
+            drop_pending_updates=True
+        )
+        logger.info(f"Webhook установлен: {webhook_url}")
+    
+    yield
+    
+    # Завершение
+    logger.info("Завершение приложения...")
+    
+    # Удаление webhook
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Webhook удален")
+    
+    # Закрытие подключений
+    await close_database()
+    await storage.close()
+    await bot.session.close()
+    
+    logger.info("Приложение завершено")
+
+def setup_handlers():
+    """Регистрация обработчиков"""
+    # Подключение middleware
+    dp.message.middleware(AuthMiddleware())
+    dp.callback_query.middleware(AuthMiddleware())
+    dp.message.middleware(LoggingMiddleware())
+    dp.callback_query.middleware(LoggingMiddleware())
+    
+    # Подключение роутеров
+    dp.include_router(start.router)
+    
+    # TODO: Подключить остальные роутеры
+    # dp.include_router(operations.router)
+    # dp.include_router(categories.router)
+    # dp.include_router(reports.router)
+    # dp.include_router(settings.router)
+    
+    logger.info("Обработчики зарегистрированы")
+
+def create_app() -> web.Application:
+    """Создание FastAPI приложения"""
+    app = web.Application()
+    
+    # Настройка webhook handler
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        secret_token=WEBHOOK_SECRET,
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
+    # Health check endpoint
+    async def health_check(request):
+        """Проверка здоровья приложения"""
+        try:
+            # Проверка бота
+            bot_info = await bot.get_me()
+            
+            # Проверка базы данных
+            from app.database.database import engine
+            async with engine.begin() as conn:
+                await conn.execute("SELECT 1")
+            
+            return web.json_response({
+                "status": "healthy",
+                "bot": {
+                    "id": bot_info.id,
+                    "username": bot_info.username,
+                    "first_name": bot_info.first_name
+                },
+                "database": "connected",
+                "timestamp": asyncio.get_event_loop().time()
+            })
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            return web.json_response({
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": asyncio.get_event_loop().time()
+            }, status=500)
+    
+    # Добавление маршрутов
+    app.router.add_get("/health", health_check)
+    app.router.add_get("/", lambda request: web.Response(text="FinBot is running!"))
+    
+    return app
+
+async def main():
+    """Основная функция запуска"""
     try:
-        info = await bot.get_webhook_info()
-        if info.url == WEBHOOK_URL:
-            logging.info("Webhook уже установлен")
-            return
-
-        # Удаляем старый webhook только если он установлен
-        if info.url:
+        # Настройка обработчиков
+        setup_handlers()
+        
+        # Создание веб-приложения
+        app = create_app()
+        
+        if DOMAIN:
+            # Режим webhook (production)
+            logger.info("Запуск в режиме webhook")
+            
+            # Настройка приложения для webhook
+            setup_application(app, dp, bot=bot)
+            
+            # Запуск веб-сервера
+            runner = web.AppRunner(app)
+            await runner.setup()
+            
+            site = web.TCPSite(runner, host="127.0.0.1", port=8000)
+            await site.start()
+            
+            logger.info("Сервер запущен на http://127.0.0.1:8000")
+            
+            # Ожидание завершения
+            await asyncio.Event().wait()
+            
+        else:
+            # Режим polling (development)
+            logger.info("Запуск в режиме polling")
+            
+            # Удаляем webhook если установлен
             await bot.delete_webhook(drop_pending_updates=True)
-            logging.info("Старый webhook удален")
-
-        # Попытки установки нового webhook
-        for attempt in range(1, MAX_RETRIES + 1):
-            wait = 1  # значение по умолчанию
+            
+            # Инициализация базы данных
+            await init_database()
             
             try:
-                await bot.set_webhook(
-                    WEBHOOK_URL,
-                    secret_token=WEBHOOK_SECRET,
-                    drop_pending_updates=True,
+                # Запуск polling
+                await dp.start_polling(
+                    bot,
+                    allowed_updates=dp.resolve_used_update_types(),
+                    drop_pending_updates=True
                 )
-                logging.info("Webhook установлен: %s", WEBHOOK_URL)
-                return
+            finally:
+                await close_database()
+                await storage.close()
                 
-            except TelegramRetryAfter as e:
-                wait = getattr(e, "retry_after", 1)
-                logging.warning("Flood limit exceeded, retry after %s s", wait)
-                
-            except (TelegramNetworkError, aiohttp.ClientError) as e:
-                wait = min(2 ** attempt, 60)  # экспоненциальный бэк-офф с лимитом
-                logging.warning("Сетевая ошибка при установке webhook: %s", e)
-                
-            except TelegramBadRequest as e:
-                logging.error("BadRequest при установке webhook: %s", e)
-                break  # нет смысла повторять при ошибке запроса
-
-            if attempt < MAX_RETRIES:
-                logging.warning("Повтор %d/%d через %s с", attempt, MAX_RETRIES, wait)
-                await asyncio.sleep(wait)
-
-        logging.error("Webhook так и не установлен после %d попыток", MAX_RETRIES)
-        
     except Exception as e:
-        logging.error("Неожиданная ошибка при настройке webhook: %s", e)
+        logger.error(f"Ошибка запуска: {e}")
+        raise
 
-# ─────────────── Lifespan manager ───────────────
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    await _ensure_webhook()
-    yield
-    # Shutdown
+if __name__ == "__main__":
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
-    finally:
-        await bot.session.close()
-    for handler in root_logger.handlers:
-        handler.close()
-
-# ─────────────── FastAPI-приложение ───────────────
-app = FastAPI(title="Финансовый Telegram Бот", lifespan=lifespan)
-
-@app.get("/")
-async def root():
-    return {"message": "Финансовый бот работает", "status": "ok"}
-
-@app.post(WEBHOOK_PATH)
-async def handle_webhook(
-    request: Request,
-    x_telegram_bot_api_secret_token: str = Header(None),
-):
-    # Проверка секретного токена в заголовке
-    if WEBHOOK_SECRET and x_telegram_bot_api_secret_token != WEBHOOK_SECRET:
-        logging.warning("Запрос к webhook с некорректным секретом")
-        raise HTTPException(status_code=403, detail="Forbidden")
-    
-    try:
-        payload = await request.json()
-        update_id = payload.get("update_id", "unknown")
-        logging.info(f"Получен webhook: {update_id}")
-        update = Update(**payload)
-        await dp.feed_update(bot, update)
-        return {"ok": True}
-        
-    except TelegramBadRequest as e:
-        logging.error("TelegramBadRequest при обработке webhook: %s", e)
-        return {"ok": False, "error": str(e)}
-        
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Получен сигнал остановки")
     except Exception as e:
-        logging.exception("Неожиданная ошибка при webhook: %s", e)
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
-@app.get("/health")
-async def health_check():
-    try:
-        me = await bot.get_me()
-        info = await bot.get_webhook_info()
-        return {
-            "status": "ok",
-            "bot_username": me.username,
-            "webhook_url": info.url,
-            "webhook_pending_updates": info.pending_update_count,
-        }
-    except Exception as e:
-        logging.error("Health check failed: %s", e)
-        return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
+        logger.error(f"Критическая ошибка: {e}")
+        raise
