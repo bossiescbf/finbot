@@ -1,56 +1,26 @@
-from typing import Callable, Dict, Any, Awaitable
-from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Message, CallbackQuery
-from sqlalchemy.ext.asyncio import AsyncSession
+from aiogram import types
+from loguru import logger
+from app.database.database import get_async_session
 
-from ..database.database import get_async_session
-from ..database.crud import UserCRUD
+class AuthMiddleware:
+    async def __call__(self, handler, event: types.Update, data: dict):
+        """
+        Middleware для проверки аутентификации и передачи сессии БД.
+        event — объект aiogram.types.Update
+        data  — словарь с контекстом до обработчика
+        """
+        # Получаем асинхронную сессию БД
+        async with get_async_session() as db:
+            data["db"] = db
 
-class AuthMiddleware(BaseMiddleware):
-    """Middleware для аутентификации пользователей"""
-    
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: Dict[str, Any]
-    ) -> Any:
-        # Получаем пользователя из события
-        user = None
-        if isinstance(event, (Message, CallbackQuery)):
-            user = event.from_user
-        
-        if not user:
-            # Если нет пользователя, пропускаем middleware
-            return await handler(event, data)
-        
-        # Получаем сессию БД
-        async for db in get_async_session():
             try:
-                # Ищем пользователя в базе
-                db_user = await UserCRUD.get_by_telegram_id(db, user.id)
-                
-                # Добавляем информацию о пользователе в данные
-                data["db_user"] = db_user
-                data["is_registered"] = db_user is not None
-                data["db"] = db
-                
-                # Если пользователь не зарегистрирован, но это не команда /start
-                if not db_user and not (isinstance(event, Message) and event.text and event.text.startswith('/start')):
-                    if isinstance(event, Message):
-                        await event.answer(
-                            "❌ Ты не зарегистрирован. Используй команду /start для начала работы."
-                        )
-                    elif isinstance(event, CallbackQuery):
-                        await event.answer("Используй команду /start для начала работы.", show_alert=True)
-                    return
-                
-                # Вызываем обработчик
+                # Вызываем следующий обработчик
                 return await handler(event, data)
-                
             except Exception as e:
-                # Логируем ошибку и продолжаем без БД
-                print(f"Auth middleware error: {e}")
-                return await handler(event, data)
-            finally:
-                await db.close()
+                logger.error(f"AuthMiddleware error: {e}")
+                # Если пришло сообщение (не CallbackQuery), отвечаем в чат
+                if event.message:
+                    await event.message.reply(
+                        "❌ Произошла ошибка при обработке запроса. Попробуйте ещё раз или обратитесь к администратору."
+                    )
+                return  # прерываем цепочку
