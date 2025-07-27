@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, func, and_, or_, desc, asc
@@ -311,7 +311,7 @@ class BudgetCRUD:
         
         # Вычисляем потраченную сумму за период бюджета
         start_date = budget.start_date
-        end_date = budget.end_date or datetime.now()
+        end_date = budget.end_date or datetime.now(timezone.utc)
         
         spent_result = await db.execute(
             select(func.coalesce(func.sum(Operation.amount), 0)).where(

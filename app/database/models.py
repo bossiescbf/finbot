@@ -7,7 +7,6 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
-import uuid
 
 Base = declarative_base()
 
@@ -35,7 +34,7 @@ class User(Base):
     categories = relationship('Category', back_populates='user', cascade='all, delete-orphan')
     
     def __repr__(self):
-        return f"<User(id={self.id}, telegram_id={self.telegram_id}, username='{self.username}')>"
+        return f"<User(id={self.id}, telegram_id={self.telegram_id}, first_name='{self.first_name}')>"
 
 class Category(Base):
     __tablename__ = 'categories'
@@ -95,7 +94,7 @@ class Operation(Base):
         return self.category.name if self.category else 'Без категории'
     
     def __repr__(self):
-        return f"<Operation(id={self.id}, type='{self.type}', amount={self.amount}, category='{self.category_name}')>"
+        return f"<Operation(id={self.id}, type='{self.type}', amount={self.amount})>"
 
 class UserSession(Base):
     """Таблица для хранения пользовательских сессий и состояний FSM"""
@@ -135,4 +134,4 @@ class Budget(Base):
     category = relationship('Category')
     
     def __repr__(self):
-        return f"<Budget(id={self.id}, limit={self.limit_amount}, period='{self.period}')>"
+        return f"<Budget(id={self.id}, limit_amount={self.limit_amount}, period='{self.period}')>"
