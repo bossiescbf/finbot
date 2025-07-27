@@ -95,35 +95,6 @@ async def menu_command(message: Message, state: FSMContext):
         parse_mode="HTML"
     )
 
-@router.message(Command("cancel"))
-async def cancel_command(message: Message, state: FSMContext):
-    """Отмена текущего действия"""
-    current_state = await state.get_state()
-    
-    if current_state is None:
-        await message.answer(
-            "❌ Нет активных действий для отмены.",
-            reply_markup=main_menu_keyboard()
-        )
-        return
-    
-    await state.clear()
-    await message.answer(
-        "✅ Действие отменено. Возвращаемся в главное меню.",
-        reply_markup=main_menu_keyboard()
-    )
-
-@router.callback_query(F.data.startswith("cancel"))
-async def cancel_callback(callback: CallbackQuery, state: FSMContext):
-    """Отмена через callback"""
-    await state.clear()
-    
-    await callback.message.edit_text(
-        "✅ Действие отменено. Возвращаемся в главное меню.",
-        reply_markup=main_menu_keyboard()
-    )
-    await callback.answer("Отменено")
-
 @router.message(Command("status"))
 async def status_command(message: Message):
     """Показать статус бота и пользователя"""

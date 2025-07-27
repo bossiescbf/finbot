@@ -1,19 +1,24 @@
 from aiogram import Router, types
-from aiogram.filters import Command
-from app.database.database import get_async_session
+from aiogram.filters import Command, Text
 from app.database.crud import OperationCRUD
 
 router = Router()
 
 @router.message(Command("add"))
 async def add_command(message: types.Message):
-    # логика текстового ввода /add
-    await message.reply("Введите сумму и описание операции…")
+    await message.answer("Напишите операцию в формате:\n`+5000 зарплата` или `1200 обед`", parse_mode="Markdown")
 
-@router.callback_query(lambda c: c.data in ["add_income", "add_expense"])
-async def add_callback(query: types.CallbackQuery):
-    if query.data == "add_income":
-        await query.message.answer("Ввод дохода: …")
-    else:
-        await query.message.answer("Ввод расхода: …")
-    await query.answer()  # закрыть «часики»
+@router.message(Text(startswith="+") | Text(regex=r"^\d"))
+async def quick_add(message: types.Message, db):
+    # Простейший парсер
+    parts = message.text.split(maxsplit=1)
+    amount = parts[0]
+    description = parts[1] if len(parts) > 1 else ""
+    kind = "income" if amount.startswith("+") else "expense"
+    await OperationCRUD(db).create(
+        user_id=message.from_user.id,
+        amount=amount.strip("+"),
+        kind=kind,
+        description=description
+    )
+    await message.answer("Операция добавлена.")

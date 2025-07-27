@@ -13,7 +13,11 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 
 from app.database.database import init_database, close_database, engine
-from app.handlers import start, operations, categories, reports, settings, help as help_handler
+from app.handlers import (
+    start_router, help_router, balance_router,
+    operations_router, reports_router,
+    categories_router, settings_router, cancel_router
+)
 from app.middlewares.auth import AuthMiddleware
 from app.middlewares.logging import LoggingMiddleware
 
@@ -61,14 +65,14 @@ def setup_handlers():
     dp.callback_query.middleware(AuthMiddleware())
     dp.message.middleware(LoggingMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())
-    dp.include_router(start.router)             # /start
-    dp.include_router(help_handler.router)      # /help
-    dp.include_router(operations.router)        # /add, кнопки "Добавить доход/расход"
-    dp.include_router(categories.router)        # /categories, кнопки "Категории"
-    dp.include_router(reports.router)           # /report, кнопки "Отчеты"
-    dp.include_router(settings.router)          # /settings, кнопки "Настройки"
-    dp.include_router(balance.router)           # /balance, кнопка "Баланс"
-    dp.include_router(cancel.router)            # /cancel
+    dp.include_router(start_router)
+    dp.include_router(help_router)
+    dp.include_router(balance_router)
+    dp.include_router(operations_router)
+    dp.include_router(reports_router)
+    dp.include_router(categories_router)
+    dp.include_router(settings_router)
+    dp.include_router(cancel_router)
     logger.info("Обработчики Telegram-бота зарегистрированы")
 
 # 6. Хэндлеры старта и завершения AioHTTP-приложения
