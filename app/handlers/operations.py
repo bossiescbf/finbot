@@ -4,7 +4,7 @@ from aiogram.filters.state import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database.crud import UserCRUD, OperationCRUD
+from app.database.crud import UserCRUD, OperationCRUD, CategoryCRUD
 from app.keyboards.inline import categories_keyboard, main_menu_keyboard
 
 router = Router()
@@ -37,18 +37,28 @@ async def process_amount(message: Message, state: FSMContext, db: AsyncSession):
     amount = float(message.text)
     await state.update_data(amount=amount)
 
+    # Теперь CategoryCRUD доступен
     is_income = True if op_type == "income" else False
     categories = await CategoryCRUD.get_user_categories(
         db=db,
         user_id=message.from_user.id,
         is_income=is_income
     )
+    
+    # Преобразуем объекты категорий в словари для клавиатуры
     kb = categories_keyboard(
         [{"id": c.id, "name": c.name, "icon": c.icon} for c in categories],
         operation_type=op_type
     )
     await message.answer("Выберите категорию:", reply_markup=kb)
     await state.set_state(OperationStates.waiting_for_category)
+
+@router.message(
+    StateFilter(OperationStates.waiting_for_amount),
+    ~F.text.regexp(r"^\d+(\.\d{1,2})?$")
+)
+async def invalid_amount(message: Message):
+    await message.reply("Неверный формат суммы. Введите число, например: 100 или 99.50.")
 
 @router.callback_query(StateFilter(OperationStates.waiting_for_category))
 async def process_category(cb: CallbackQuery, state: FSMContext, db: AsyncSession):
@@ -57,10 +67,20 @@ async def process_category(cb: CallbackQuery, state: FSMContext, db: AsyncSessio
     amount = data["amount"]
     category_id = int(cb.data.split("_", 1)[1])
 
-    # Сохраняем операцию
+    # Создаем операцию
+    from app.schemas.operation import OperationCreate
+    from datetime import datetime
+    
+    op_create = OperationCreate(
+        amount=amount,
+        type=op_type,
+        occurred_at=datetime.utcnow(),
+        category_id=category_id
+    )
+
     await OperationCRUD.create(
         db=db,
-        operation_data=...,  # ваш OperationCreate
+        operation_data=op_create,
         user_id=cb.from_user.id
     )
 
@@ -70,10 +90,3 @@ async def process_category(cb: CallbackQuery, state: FSMContext, db: AsyncSessio
         reply_markup=main_menu_keyboard()
     )
     await cb.answer()
-
-@router.message(
-    StateFilter(OperationStates.waiting_for_amount),
-    ~F.text.regexp(r"^\d+(\.\d{1,2})?$")
-)
-async def invalid_amount(message: Message):
-    await message.reply("Неверный формат суммы. Введите число, например: 100 или 99.50.")
