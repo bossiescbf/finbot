@@ -1,14 +1,20 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import (
-    Column, Integer, BigInteger, Text, Numeric, DateTime, 
-    ForeignKey, CheckConstraint, func, Boolean, String
-)
+from sqlalchemy import Table, Column, Integer, BigInteger, DateTime, ForeignKey, Text, Numeric, CheckConstraint, func, Boolean, String
+from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 
 Base = declarative_base()
+
+user_categories = Table(
+    'user_categories',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('category_id', Integer, ForeignKey('categories.id', ondelete='CASCADE'), primary_key=True),
+    Column('created_at', DateTime(timezone=True), server_default=func.now(), nullable=False)
+)
 
 class User(Base):
     __tablename__ = 'users'
@@ -31,7 +37,8 @@ class User(Base):
     
     # Связи
     operations = relationship('Operation', back_populates='user', cascade='all, delete-orphan')
-    categories = relationship('Category', back_populates='user', cascade='all, delete-orphan')
+    # Many-to-many связь с Category через secondary table
+    categories = relationship("Category", secondary=user_categories, back_populates="users")
     
     def __repr__(self):
         return f"<User(id={self.id}, telegram_id={self.telegram_id}, first_name='{self.first_name}')>"
@@ -40,17 +47,15 @@ class Category(Base):
     __tablename__ = 'categories'
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    icon = Column(String(10), nullable=True)  # Эмодзи иконка
-    color = Column(String(7), nullable=True)  # HEX цвет
-    is_income = Column(Boolean, default=False, nullable=False)  # True для доходов, False для расходов
+    name = Column(String(100), nullable=False, unique=True)
+    icon = Column(String(10), nullable=True)
+    is_income = Column(Boolean, default=False, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # Связи
-    user = relationship('User', back_populates='categories')
+    # Many-to-many связь с User через secondary table
+    users = relationship("User", secondary="user_categories", back_populates="categories")
     operations = relationship('Operation', back_populates='category')
     
     def __repr__(self):
