@@ -17,7 +17,7 @@ class AddCategoryStates(StatesGroup):
 
 @router.callback_query(F.data == "categories_menu")
 @auth_required
-async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession):
+async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession, **kwargs):
     """Показать меню категорий"""
     income_categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=True)
     expense_categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=False)
@@ -29,7 +29,7 @@ async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession):
         keyboard.button(text="➕ Добавить категорию", callback_data="add_category")
         await call.message.edit_text(text, reply_markup=keyboard.as_markup())
         return
-    
+
     text = "📊 **Ваши категории:**\n\n"
     
     if income_categories:
@@ -44,7 +44,7 @@ async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession):
             text += f"{cat.icon} {cat.name}\n"
     
     keyboard = get_categories_keyboard()
-    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await call.message.edit_text(text, reply_markup=keyboard.as_markup(), parse_mode="Markdown")
 
 @router.callback_query(F.data == "add_category")
 @auth_required

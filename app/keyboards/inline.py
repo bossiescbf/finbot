@@ -31,15 +31,18 @@ def operations_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("Добавить расход", callback_data="add_expense")],
     ])
 
-def get_categories_keyboard():
-    """Клавиатура меню категорий"""
+def get_categories_keyboard() -> InlineKeyboardBuilder:
+    """Клавиатура меню категорий в 2 столбца"""
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ Добавить категорию", callback_data="add_category")
     kb.button(text="✏️ Редактировать", callback_data="edit_categories")
     kb.button(text="💰 Категории доходов", callback_data="categories_income")
     kb.button(text="💸 Категории расходов", callback_data="categories_expenses")
     kb.button(text="🔙 Назад", callback_data="main_menu")
-    kb.adjust(1, 1, 2, 1)
+    
+    # Первые 4 кнопки в 2 столбца, последняя отдельно
+    kb.adjust(2, 2, 1)
+    
     return kb
 
 def confirm_operation_keyboard() -> InlineKeyboardMarkup:
@@ -107,7 +110,7 @@ def settings_menu_keyboard() -> InlineKeyboardMarkup:
     
     return keyboard.as_markup()
 
-def get_category_selection_keyboard(categories: List[Category], operation_type: str = ""):
+def get_category_selection_keyboard(categories: List[Category], operation_type: str = "", columns: int = 3) -> InlineKeyboardBuilder:
     """Клавиатура выбора категории для операции"""
     kb = InlineKeyboardBuilder()
     
@@ -121,12 +124,22 @@ def get_category_selection_keyboard(categories: List[Category], operation_type: 
             callback_data=callback_data
         )
     
+    # Добавляем служебные кнопки
     kb.button(text="➕ Новая категория", callback_data="add_category")
     kb.button(text="🔙 Назад", callback_data="main_menu")
-    kb.adjust(2, 1, 1)
+    
+    # Размещаем категории в указанное количество столбцов
+    categories_count = len(categories)
+    if categories_count > 0:
+        kb.adjust(*([columns] * (categories_count // columns) + 
+                   ([categories_count % columns] if categories_count % columns else []) +
+                   [1, 1]))  # Служебные кнопки по одной в строке
+    else:
+        kb.adjust(1, 1)  # Только служебные кнопки
+    
     return kb
 
-def get_back_keyboard():
+def get_back_keyboard() -> InlineKeyboardBuilder:
     """Простая клавиатура с кнопкой Назад"""
     kb = InlineKeyboardBuilder()
     kb.button(text="🔙 Назад", callback_data="categories_menu")

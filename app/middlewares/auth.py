@@ -54,7 +54,7 @@ class AuthMiddleware(BaseMiddleware):
 
 def auth_required(handler):
     """Декоратор для обработчиков, требующих аутентификации"""
-    async def wrapper(event, *args, **kwargs):
+    async def wrapper(event, **kwargs):
         user = kwargs.get('user')
         if not user:
             if isinstance(event, Message):
@@ -63,6 +63,15 @@ def auth_required(handler):
                 await event.answer("❌ Ошибка аутентификации. Используйте /start для регистрации.")
             return
         
-        return await handler(event, *args, **kwargs)
+        # Создаем динамический список параметров на основе сигнатуры функции
+        import inspect
+        sig = inspect.signature(handler)
+        filtered_kwargs = {}
+        
+        for param_name in sig.parameters:
+            if param_name != 'event' and param_name in kwargs:
+                filtered_kwargs[param_name] = kwargs[param_name]
+        
+        return await handler(event, **filtered_kwargs)
     
     return wrapper
