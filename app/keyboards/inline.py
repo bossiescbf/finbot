@@ -16,7 +16,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📈 Баланс", callback_data="balance")
     )
     keyboard.row(
-        InlineKeyboardButton(text="📁 Категории", callback_data="categories"),
+        InlineKeyboardButton(text="📁 Категории", callback_data="categories_menu"),
         InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")
     )
     keyboard.row(

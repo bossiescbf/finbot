@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import crud
+from app.database.crud import CategoryCRUD
 from app.keyboards.inline import get_categories_keyboard, get_back_keyboard
 from app.middlewares.auth import auth_required
 
@@ -19,8 +19,8 @@ class AddCategoryStates(StatesGroup):
 @auth_required
 async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession):
     """Показать меню категорий"""
-    income_categories = await crud.get_user_categories(db, user.id, is_income=True)
-    expense_categories = await crud.get_user_categories(db, user.id, is_income=False)
+    income_categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=True)
+    expense_categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=False)
     
     if not income_categories and not expense_categories:
         text = "📁 Категории не найдены\n\n"
@@ -113,10 +113,10 @@ async def process_category_type(call: CallbackQuery, user, state: FSMContext, db
     
     try:
         # Создаём или получаем категорию
-        category = await crud.create_or_get_category(db, name, icon, is_income)
+        category = await CategoryCRUD.create_or_get_category(db, name, icon, is_income)
         
         # Добавляем категорию пользователю
-        success = await crud.add_category_to_user(db, user.id, category.id)
+        success = await CategoryCRUD.add_category_to_user(db, user.id, category.id)
         await db.commit()
         
         if success:
@@ -140,7 +140,7 @@ async def process_category_type(call: CallbackQuery, user, state: FSMContext, db
 @auth_required
 async def show_income_categories(call: CallbackQuery, user, db: AsyncSession):
     """Показать категории доходов"""
-    categories = await crud.get_user_categories(db, user.id, is_income=True)
+    categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=True)
     
     if not categories:
         await call.message.edit_text(
@@ -163,7 +163,7 @@ async def show_income_categories(call: CallbackQuery, user, db: AsyncSession):
 @auth_required
 async def show_expense_categories(call: CallbackQuery, user, db: AsyncSession):
     """Показать категории расходов"""
-    categories = await crud.get_user_categories(db, user.id, is_income=False)
+    categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=False)
     
     if not categories:
         await call.message.edit_text(

@@ -1,35 +1,55 @@
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, TelegramObject
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import crud
+from app.database.crud import UserCRUD
 from app.database.models import User
 
 class AuthMiddleware(BaseMiddleware):
     async def __call__(
         self,
-        handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
-        event: Message | CallbackQuery,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
+        """Middleware для аутентификации пользователей"""
+        
+        # Получаем сессию базы данных
         db: AsyncSession = data.get('db')
-        telegram_user = event.from_user
+        if not db:
+            return await handler(event, data)
         
-        # Получаем пользователя из БД
-        user = await crud.get_user_by_telegram_id(db, telegram_user.id)
+        # Извлекаем пользователя из события
+        telegram_user = None
+        if isinstance(event, (Message, CallbackQuery)):
+            telegram_user = event.from_user
+        elif hasattr(event, 'from_user'):
+            telegram_user = event.from_user
         
-        if not user:
-            # Создаем нового пользователя с базовыми категориями
-            user = await crud.create_user(
+        if not telegram_user:
+            return await handler(event, data)
+        
+        try:
+            # Получаем пользователя из БД или создаем нового
+            user, is_new = await UserCRUD.get_or_create_user(
                 db=db,
                 telegram_id=telegram_user.id,
-                first_name=telegram_user.first_name,
+                first_name=telegram_user.first_name or "Пользователь",
                 last_name=telegram_user.last_name,
                 username=telegram_user.username
             )
+            
+            # Добавляем пользователя в данные обработчика
+            data['user'] = user
+            data['is_new_user'] = is_new
+            
+        except Exception as e:
+            # Логируем ошибку, но не блокируем выполнение
+            print(f"Ошибка в AuthMiddleware: {e}")
+            data['user'] = None
+            data['is_new_user'] = False
         
-        data['user'] = user
         return await handler(event, data)
 
 def auth_required(handler):
@@ -38,9 +58,9 @@ def auth_required(handler):
         user = kwargs.get('user')
         if not user:
             if isinstance(event, Message):
-                await event.reply("❌ Пользователь не найден")
+                await event.reply("❌ Ошибка аутентификации. Используйте /start для регистрации.")
             elif isinstance(event, CallbackQuery):
-                await event.answer("❌ Пользователь не найден")
+                await event.answer("❌ Ошибка аутентификации. Используйте /start для регистрации.")
             return
         
         return await handler(event, *args, **kwargs)

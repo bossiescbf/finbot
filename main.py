@@ -23,6 +23,7 @@ from app.handlers.cancel import router as cancel_router
 
 from app.middlewares.auth import AuthMiddleware
 from app.middlewares.logging import LoggingMiddleware
+from app.middlewares.database import DatabaseMiddleware
 
 # Настройка логирования
 logging.basicConfig(
@@ -55,6 +56,8 @@ dp = Dispatcher(storage=storage)
 def setup_handlers():
     """Регистрация middleware и роутеров"""
     # Middleware
+    dp.message.middleware(DatabaseMiddleware())
+    dp.callback_query.middleware(DatabaseMiddleware())
     dp.message.middleware(AuthMiddleware())
     dp.callback_query.middleware(AuthMiddleware())
     dp.message.middleware(LoggingMiddleware())
