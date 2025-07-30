@@ -238,3 +238,61 @@ def quick_amounts_keyboard(operation_type: str) -> InlineKeyboardMarkup:
     )
     
     return keyboard.as_markup()
+    
+def edit_categories_keyboard(income_categories: List[Category], expense_categories: List[Category]) -> InlineKeyboardBuilder:
+    """Клавиатура редактирования категорий с выбором конкретной категории"""
+    kb = InlineKeyboardBuilder()
+    
+    # Добавляем категории доходов
+    for cat in income_categories:
+        kb.button(
+            text=f"💰 {cat.icon} {cat.name}",
+            callback_data=f"edit_category:{cat.id}"
+        )
+    
+    # Добавляем категории расходов  
+    for cat in expense_categories:
+        kb.button(
+            text=f"💸 {cat.icon} {cat.name}",
+            callback_data=f"edit_category:{cat.id}"
+        )
+    
+    # Кнопка "Назад"
+    kb.button(text="🔙 Назад", callback_data="categories_menu")
+    
+    # Размещаем по 2 категории в ряд, кнопку "Назад" отдельно
+    categories_count = len(income_categories) + len(expense_categories)
+    if categories_count > 0:
+        kb.adjust(*([2] * (categories_count // 2) + 
+                    ([1] if categories_count % 2 else []) + 
+                    [1]))  # Кнопка "Назад" отдельно
+    else:
+        kb.adjust(1)  # Только кнопка "Назад"
+    
+    return kb
+
+def edit_category_actions_keyboard(category_id: int) -> InlineKeyboardBuilder:
+    """Клавиатура действий с конкретной категорией"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🗑️ Удалить категорию", callback_data=f"delete_category:{category_id}")
+    kb.button(text="🔙 Назад к списку", callback_data="edit_categories")
+    kb.button(text="🏠 Главное меню", callback_data="categories_menu")
+    kb.adjust(1, 1, 1)
+    return kb
+
+def delete_category_confirmation_keyboard(category_id: int) -> InlineKeyboardBuilder:
+    """Клавиатура подтверждения удаления категории"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Да, удалить", callback_data=f"confirm_delete:{category_id}")
+    kb.button(text="❌ Отменить", callback_data=f"edit_category:{category_id}")
+    kb.adjust(1, 1)
+    return kb
+
+def category_type_selection_keyboard() -> InlineKeyboardBuilder:
+    """Клавиатура выбора типа категории"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💰 Доход", callback_data="category_type:income")
+    kb.button(text="💸 Расход", callback_data="category_type:expense")
+    kb.button(text="🔙 Назад", callback_data="categories_menu")
+    kb.adjust(2, 1)
+    return kb

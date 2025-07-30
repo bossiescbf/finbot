@@ -5,7 +5,14 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.crud import CategoryCRUD
-from app.keyboards.inline import get_categories_keyboard, get_back_keyboard
+from app.keyboards.inline import (
+    get_categories_keyboard, 
+    get_back_keyboard,
+    edit_categories_keyboard,
+    edit_category_actions_keyboard,
+    delete_category_confirmation_keyboard,
+    category_type_selection_keyboard
+)
 from app.middlewares.auth import auth_required
 
 router = Router()
@@ -45,6 +52,123 @@ async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession, **kw
     
     keyboard = get_categories_keyboard()
     await call.message.edit_text(text, reply_markup=keyboard.as_markup(), parse_mode="Markdown")
+
+@router.callback_query(F.data == "edit_categories")
+@auth_required
+async def show_edit_categories_menu(call: CallbackQuery, user, db: AsyncSession):
+    """Показать меню редактирования категорий"""
+    # Получаем все категории пользователя
+    income_categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=True)
+    expense_categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=False)
+    
+    if not income_categories and not expense_categories:
+        await call.message.edit_text(
+            "❌ У вас пока нет категорий для редактирования.\n\n"
+            "Сначала добавьте категории через кнопку ➕ Добавить категорию",
+            reply_markup=get_back_keyboard().as_markup()
+        )
+        return
+    
+    # Используем функцию из inline.py
+    keyboard = edit_categories_keyboard(income_categories, expense_categories)
+    
+    await call.message.edit_text(
+        "✏️ **Редактирование категорий**\n\n"
+        "Выберите категорию для редактирования:",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="Markdown"
+    )
+
+@router.callback_query(F.data.startswith("edit_category:"))
+@auth_required
+async def edit_specific_category(call: CallbackQuery, user, db: AsyncSession):
+    """Показать меню редактирования конкретной категории"""
+    category_id = int(call.data.split(":")[1])
+    
+    # Получаем категорию из базы данных
+    category = await CategoryCRUD.get_category_by_id(db, category_id)
+    
+    if not category:
+        await call.answer("❌ Категория не найдена", show_alert=True)
+        return
+    
+    # Проверяем, что категория принадлежит пользователю
+    user_categories = await CategoryCRUD.get_user_categories(db, user.id)
+    if category not in user_categories:
+        await call.answer("❌ У вас нет доступа к этой категории", show_alert=True)
+        return
+    
+    # Используем функцию из inline.py
+    keyboard = edit_category_actions_keyboard(category_id)
+    
+    category_type = "доходов" if category.is_income else "расходов"
+    
+    await call.message.edit_text(
+        f"✏️ **Редактирование категории**\n\n"
+        f"**Категория:** {category.icon} {category.name}\n"
+        f"**Тип:** {category_type}\n\n"
+        f"Выберите действие:",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="Markdown"
+    )
+
+@router.callback_query(F.data.startswith("delete_category:"))  
+@auth_required
+async def confirm_delete_category(call: CallbackQuery, user, db: AsyncSession):
+    """Подтверждение удаления категории"""
+    category_id = int(call.data.split(":")[1])
+    
+    # Получаем категорию
+    category = await CategoryCRUD.get_category_by_id(db, category_id)
+    
+    if not category:
+        await call.answer("❌ Категория не найдена", show_alert=True)
+        return
+    
+    # Используем функцию из inline.py
+    keyboard = delete_category_confirmation_keyboard(category_id)
+    
+    await call.message.edit_text(
+        f"⚠️ **Подтверждение удаления**\n\n"
+        f"Вы уверены, что хотите удалить категорию:\n"
+        f"**{category.icon} {category.name}**?\n\n"
+        f"❗️ Это действие нельзя отменить!",
+        reply_markup=keyboard.as_markup(),
+        parse_mode="Markdown"
+    )
+
+@router.callback_query(F.data.startswith("confirm_delete:"))
+@auth_required  
+async def delete_category_confirmed(call: CallbackQuery, user, db: AsyncSession):
+    """Окончательное удаление категории"""
+    category_id = int(call.data.split(":")[1])
+    
+    try:
+        # Удаляем категорию у пользователя
+        success = await CategoryCRUD.remove_category_from_user(db, user.id, category_id)
+        await db.commit()
+        
+        if success:
+            await call.message.edit_text(
+                "✅ **Категория успешно удалена!**\n\n"
+                "Категория больше не отображается в ваших списках.",
+                reply_markup=get_back_keyboard().as_markup(),
+                parse_mode="Markdown"
+            )
+        else:
+            await call.message.edit_text(
+                "❌ **Ошибка при удалении категории**\n\n"
+                "Возможно, категория уже была удалена ранее.",
+                reply_markup=get_back_keyboard().as_markup(),
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        await call.message.edit_text(
+            f"❌ **Произошла ошибка:** {str(e)}",
+            reply_markup=get_back_keyboard().as_markup(),
+            parse_mode="Markdown"
+        )
 
 @router.callback_query(F.data == "add_category")
 @auth_required
@@ -86,17 +210,12 @@ async def process_category_icon(message: Message, user, state: FSMContext):
     
     await state.update_data(icon=icon)
     
-    # Клавиатура выбора типа категории
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    kb = InlineKeyboardBuilder()
-    kb.button(text="💰 Доход", callback_data="category_type:income")
-    kb.button(text="💸 Расход", callback_data="category_type:expense")
-    kb.button(text="🔙 Назад", callback_data="categories_menu")
-    kb.adjust(2, 1)
+    # Используем функцию из inline.py
+    keyboard = category_type_selection_keyboard()
     
     await message.reply(
         "💰 Выберите тип категории:",
-        reply_markup=kb.as_markup()
+        reply_markup=keyboard.as_markup()
     )
     await state.set_state(AddCategoryStates.waiting_type)
 
@@ -130,7 +249,7 @@ async def process_category_type(call: CallbackQuery, user, state: FSMContext, db
                 f"ℹ️ Категория **{icon} {name}** уже есть в вашем списке",
                 parse_mode="Markdown"
             )
-            
+        
     except Exception as e:
         await call.message.edit_text(f"❌ Ошибка при создании категории: {str(e)}")
     

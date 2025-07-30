@@ -172,6 +172,31 @@ class CategoryCRUD:
         for category in default_categories:
             if category.id not in user_category_ids:
                 await CategoryCRUD.add_category_to_user(db, user_id, category.id)
+                
+    @staticmethod
+    async def get_category_by_id(db: AsyncSession, category_id: int) -> Category:
+        """Получить категорию по ID"""
+        from sqlalchemy import select
+        result = await db.execute(
+            select(Category).where(Category.id == category_id)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod  
+    async def remove_category_from_user(db: AsyncSession, user_id: int, category_id: int) -> bool:
+        """Удалить связь категории с пользователем"""
+        from sqlalchemy import delete, and_
+        from app.database.models import user_categories
+    
+        result = await db.execute(
+            delete(user_categories).where(
+                and_(
+                    user_categories.c.user_id == user_id,
+                    user_categories.c.category_id == category_id
+                )
+            )
+        )
+        return result.rowcount > 0
 
 
 class OperationCRUD:
