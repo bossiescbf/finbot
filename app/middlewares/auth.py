@@ -1,52 +1,48 @@
-import logging
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database.session import async_session_factory
-from app.database.crud import UserCRUD
 
-logger = logging.getLogger(__name__)
+from app.database import crud
+from app.database.models import User
 
 class AuthMiddleware(BaseMiddleware):
-    """
-    Middleware для аутентификации и инициализации пользователя.
-    При каждом сообщении или callback:
-    1) Открывает AsyncSession и кладёт в data['db']
-    2) Получает или создаёт запись User в БД
-    3) При создании нового пользователя добавляет категории по умолчанию
-    4) Кладёт объект user в data['user']
-    """
-
     async def __call__(
         self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
+        handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
+        event: Message | CallbackQuery,
         data: Dict[str, Any]
     ) -> Any:
-        # Обрабатываем только входящие сообщения и callback'и
-        if isinstance(event, (Message, CallbackQuery)):
-            # Открываем сессию к БД
-            async with async_session_factory() as db:  # AsyncSession
-                data["db"] = db
-
-                # Извлекаем telegram_id
-                tg_id = event.from_user.id
-
-                # Получаем или создаём пользователя
-                user, created = await UserCRUD.get_or_create_user(
-                    db=db,
-                    telegram_id=tg_id,
-                    first_name=event.from_user.first_name or "",
-                    username=event.from_user.username or ""
-                )
-                data["user"] = user
-
-                if created:
-                    logger.info(f"Создан новый пользователь {tg_id} и дефолтные категории")
-
-                # Передаём управление дальше с db и user в data
-                return await handler(event, data)
-
-        # Для других типов апдейтов — просто пропускаем
+        db: AsyncSession = data.get('db')
+        telegram_user = event.from_user
+        
+        # Получаем пользователя из БД
+        user = await crud.get_user_by_telegram_id(db, telegram_user.id)
+        
+        if not user:
+            # Создаем нового пользователя с базовыми категориями
+            user = await crud.create_user(
+                db=db,
+                telegram_id=telegram_user.id,
+                first_name=telegram_user.first_name,
+                last_name=telegram_user.last_name,
+                username=telegram_user.username
+            )
+        
+        data['user'] = user
         return await handler(event, data)
+
+def auth_required(handler):
+    """Декоратор для обработчиков, требующих аутентификации"""
+    async def wrapper(event, *args, **kwargs):
+        user = kwargs.get('user')
+        if not user:
+            if isinstance(event, Message):
+                await event.reply("❌ Пользователь не найден")
+            elif isinstance(event, CallbackQuery):
+                await event.answer("❌ Пользователь не найден")
+            return
+        
+        return await handler(event, *args, **kwargs)
+    
+    return wrapper

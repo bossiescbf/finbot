@@ -5,7 +5,7 @@ from sqlalchemy import select, func, and_, or_, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import User, Operation, Category, Budget
+from .models import User, Operation, Category, Budget, user_categories
 from ..schemas.user import UserCreate, UserUpdate
 from ..schemas.operation import OperationCreate, OperationUpdate
 
@@ -19,13 +19,23 @@ class UserCRUD:
         return result.scalar_one_or_none()
     
     @staticmethod
-    async def create(db: AsyncSession, user_data: UserCreate) -> User:
-        """Создать нового пользователя"""
-        user = User(**user_data.dict())
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-        return user
+    async def create_user(db: AsyncSession, telegram_id: int, first_name: str, 
+                     last_name: Optional[str] = None, username: Optional[str] = None) -> User:
+    """Создать нового пользователя с базовыми категориями"""
+    user = User(
+        telegram_id=telegram_id,
+        first_name=first_name,
+        last_name=last_name,
+        username=username
+    )
+    db.add(user)
+    await db.flush()  # Получаем ID пользователя
+    
+    # Добавляем базовые категории
+    await ensure_user_has_default_categories(db, user.id)
+    
+    await db.commit()
+    return user
     
     @staticmethod
     async def update(db: AsyncSession, user: User, user_data: UserUpdate) -> User:
@@ -57,68 +67,107 @@ class UserCRUD:
 class CategoryCRUD:
     @staticmethod
     async def get_user_categories(db: AsyncSession, user_id: int, is_income: Optional[bool] = None) -> List[Category]:
-        """Получить категории пользователя"""
-        query = select(Category).where(
-            and_(Category.user_id == user_id, Category.is_active == True)
+    """Получить категории пользователя"""
+    query = (
+        select(Category)
+        .join(user_categories, Category.id == user_categories.c.category_id)
+        .where(user_categories.c.user_id == user_id)
+        .where(Category.is_active == True)
+    )
+    
+    if is_income is not None:
+        query = query.where(Category.is_income == is_income)
+        
+    query = query.order_by(Category.name)
+    result = await db.execute(query)
+    return result.scalars().all()
+    
+    @staticmethod
+    async def get_category_by_id(db: AsyncSession, category_id: int) -> Optional[Category]:
+    """Получить категорию по ID"""
+    result = await db.execute(
+        select(Category).where(Category.id == category_id)
+    )
+    return result.scalar_one_or_none()
+    
+    @staticmethod
+    async def create_or_get_category(db: AsyncSession, name: str, icon: str, is_income: bool) -> Category:
+    """Создать новую категорию или получить существующую по имени"""
+    # Проверяем существование категории
+    result = await db.execute(
+        select(Category).where(Category.name == name)
+    )
+    category = result.scalar_one_or_none()
+    
+    if not category:
+        category = Category(
+            name=name,
+            icon=icon,
+            is_income=is_income,
+            is_default=False,
+            is_active=True
         )
-        
-        if is_income is not None:
-            query = query.where(Category.is_income == is_income)
-        
-        result = await db.execute(query.order_by(Category.name))
-        return result.scalars().all()
-    
-    @staticmethod
-    async def create(db: AsyncSession, category_data: dict) -> Category:
-        """Создать новую категорию"""
-        category = Category(**category_data)
         db.add(category)
-        await db.commit()
-        await db.refresh(category)
-        return category
+        await db.flush()
+    return category
     
     @staticmethod
-    async def get_by_id(db: AsyncSession, category_id: int, user_id: int) -> Optional[Category]:
-        """Получить категорию по ID для конкретного пользователя"""
-        result = await db.execute(
-            select(Category).where(
-                and_(Category.id == category_id, Category.user_id == user_id)
+    async def add_category_to_user(db: AsyncSession, user_id: int, category_id: int) -> bool:
+    """Добавить категорию пользователю"""
+    # Проверяем, есть ли уже такая связь
+    result = await db.execute(
+        select(user_categories)
+        .where(
+            and_(
+                user_categories.c.user_id == user_id,
+                user_categories.c.category_id == category_id
             )
         )
-        return result.scalar_one_or_none()
+    )
+    
+    if result.scalar_one_or_none():
+        return False  # Связь уже существует
+    
+    # Создаем связь
+    stmt = insert(user_categories).values(
+        user_id=user_id,
+        category_id=category_id
+    )
+    await db.execute(stmt)
+    return True
     
     @staticmethod
-    async def create_default_categories(db: AsyncSession, user_id: int):
-        """Создать категории по умолчанию для нового пользователя"""
-        
-        # Категории расходов
-        expense_categories = [
-            {"name": "🍕 Еда", "icon": "🍕", "is_income": False, "is_default": True},
-            {"name": "🚗 Транспорт", "icon": "🚗", "is_income": False, "is_default": True},
-            {"name": "🏠 Жилье", "icon": "🏠", "is_income": False, "is_default": True},
-            {"name": "👕 Одежда", "icon": "👕", "is_income": False, "is_default": True},
-            {"name": "🎬 Развлечения", "icon": "🎬", "is_income": False, "is_default": True},
-            {"name": "💊 Здоровье", "icon": "💊", "is_income": False, "is_default": True},
-            {"name": "📚 Образование", "icon": "📚", "is_income": False, "is_default": True},
-            {"name": "🎁 Подарки", "icon": "🎁", "is_income": False, "is_default": True},
-            {"name": "📱 Связь", "icon": "📱", "is_income": False, "is_default": True},
-            {"name": "🛒 Покупки", "icon": "🛒", "is_income": False, "is_default": True},
-        ]
-        
-        # Категории доходов
-        income_categories = [
-            {"name": "💼 Зарплата", "icon": "💼", "is_income": True, "is_default": True},
-            {"name": "💰 Подработка", "icon": "💰", "is_income": True, "is_default": True},
-            {"name": "🎁 Подарок", "icon": "🎁", "is_income": True, "is_default": True},
-            {"name": "📈 Инвестиции", "icon": "📈", "is_income": True, "is_default": True},
-            {"name": "💳 Возврат", "icon": "💳", "is_income": True, "is_default": True},
-        ]
-        
-        all_categories = expense_categories + income_categories
-        
-        for cat_data in all_categories:
-            cat_data["user_id"] = user_id
-            await CategoryCRUD.create(db, cat_data)
+    async def remove_category_from_user(db: AsyncSession, user_id: int, category_id: int) -> bool:
+    """Удалить категорию у пользователя"""
+    stmt = delete(user_categories).where(
+        and_(
+            user_categories.c.user_id == user_id,
+            user_categories.c.category_id == category_id
+        )
+    )
+    result = await db.execute(stmt)
+    return result.rowcount > 0
+    
+    @staticmethod
+    async def ensure_user_has_default_categories(db: AsyncSession, user_id: int):
+    """Убедиться, что у пользователя есть все базовые категории"""
+    # Получаем базовые категории
+    default_categories = await db.execute(
+        select(Category).where(Category.is_default == True)
+    )
+    default_categories = default_categories.scalars().all()
+    
+    # Получаем категории пользователя
+    user_category_ids = await db.execute(
+        select(user_categories.c.category_id)
+        .where(user_categories.c.user_id == user_id)
+    )
+    user_category_ids = {row[0] for row in user_category_ids.all()}
+    
+    # Добавляем недостающие базовые категории
+    for category in default_categories:
+        if category.id not in user_category_ids:
+            await add_category_to_user(db, user_id, category.id)
 
 class OperationCRUD:
     @staticmethod
@@ -131,37 +180,18 @@ class OperationCRUD:
         return operation
     
     @staticmethod
-    async def get_user_operations(
-        db: AsyncSession, 
-        user_id: int, 
-        limit: int = 50,
-        offset: int = 0,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        category_id: Optional[int] = None,
-        operation_type: Optional[str] = None
-    ) -> List[Operation]:
-        """Получить операции пользователя с фильтрами"""
-        
-        query = select(Operation).options(
-            selectinload(Operation.category)
-        ).where(Operation.user_id == user_id)
-        
-        # Фильтры
-        if start_date:
-            query = query.where(Operation.occurred_at >= start_date)
-        if end_date:
-            query = query.where(Operation.occurred_at <= end_date)
-        if category_id:
-            query = query.where(Operation.category_id == category_id)
-        if operation_type:
-            query = query.where(Operation.type == operation_type)
-        
-        # Сортировка и пагинация
-        query = query.order_by(desc(Operation.occurred_at)).limit(limit).offset(offset)
-        
-        result = await db.execute(query)
-        return result.scalars().all()
+    async def get_operations_by_user(db: AsyncSession, user_id: int, limit: int = 100) -> List[Operation]:
+    """Получить операции пользователя с категориями"""
+    query = (
+        select(Operation)
+        .options(selectinload(Operation.category))
+        .where(Operation.user_id == user_id)
+        .order_by(Operation.created_at.desc())
+        .limit(limit)
+    )
+    
+    result = await db.execute(query)
+    return result.scalars().all()
     
     @staticmethod
     async def get_by_id(db: AsyncSession, operation_id: int, user_id: int) -> Optional[Operation]:

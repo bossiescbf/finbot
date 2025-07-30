@@ -1,6 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List, Optional
+from app.database.models import Category
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     """Главное меню бота"""
@@ -30,33 +31,16 @@ def operations_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("Добавить расход", callback_data="add_expense")],
     ])
 
-def categories_keyboard(categories: List[dict], operation_type: str = "expense") -> InlineKeyboardMarkup:
-    """Клавиатура выбора категории"""
-    keyboard = InlineKeyboardBuilder()
-    
-    # Добавляем категории по две в ряд
-    for i in range(0, len(categories), 2):
-        row_buttons = []
-        for j in range(2):
-            if i + j < len(categories):
-                cat = categories[i + j]
-                icon = cat.get('icon', '📝')
-                name = cat['name']
-                callback_data = f"cat_{cat['id']}"
-                row_buttons.append(
-                    InlineKeyboardButton(text=f"{icon} {name}", callback_data=callback_data)
-                )
-        keyboard.row(*row_buttons)
-    
-    # Кнопки управления
-    keyboard.row(
-        InlineKeyboardButton(text="➕ Новая категория", callback_data=f"new_category_{operation_type}")
-    )
-    keyboard.row(
-        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_operation_type")
-    )
-    
-    return keyboard.as_markup()
+def get_categories_keyboard():
+    """Клавиатура меню категорий"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ Добавить категорию", callback_data="add_category")
+    kb.button(text="✏️ Редактировать", callback_data="edit_categories")
+    kb.button(text="💰 Категории доходов", callback_data="categories_income")
+    kb.button(text="💸 Категории расходов", callback_data="categories_expenses")
+    kb.button(text="🔙 Назад", callback_data="main_menu")
+    kb.adjust(1, 1, 2, 1)
+    return kb
 
 def confirm_operation_keyboard() -> InlineKeyboardMarkup:
     """Подтверждение операции"""
@@ -123,23 +107,30 @@ def settings_menu_keyboard() -> InlineKeyboardMarkup:
     
     return keyboard.as_markup()
 
-def categories_management_keyboard() -> InlineKeyboardMarkup:
-    """Управление категориями"""
-    keyboard = InlineKeyboardBuilder()
+def get_category_selection_keyboard(categories: List[Category], operation_type: str = ""):
+    """Клавиатура выбора категории для операции"""
+    kb = InlineKeyboardBuilder()
     
-    keyboard.row(
-        InlineKeyboardButton(text="➕ Добавить категорию", callback_data="add_category"),
-        InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_categories")
-    )
-    keyboard.row(
-        InlineKeyboardButton(text="📊 Категории доходов", callback_data="show_income_categories"),
-        InlineKeyboardButton(text="💸 Категории расходов", callback_data="show_expense_categories")
-    )
-    keyboard.row(
-        InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_main")
-    )
+    for category in categories:
+        callback_data = f"select_category:{category.id}"
+        if operation_type:
+            callback_data += f":{operation_type}"
+        
+        kb.button(
+            text=f"{category.icon} {category.name}",
+            callback_data=callback_data
+        )
     
-    return keyboard.as_markup()
+    kb.button(text="➕ Новая категория", callback_data="add_category")
+    kb.button(text="🔙 Назад", callback_data="main_menu")
+    kb.adjust(2, 1, 1)
+    return kb
+
+def get_back_keyboard():
+    """Простая клавиатура с кнопкой Назад"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔙 Назад", callback_data="categories_menu")
+    return kb
 
 def currency_keyboard() -> InlineKeyboardMarkup:
     """Выбор валюты"""
