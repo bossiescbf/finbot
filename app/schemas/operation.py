@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 class OperationBase(BaseModel):
     amount: Decimal = Field(..., gt=0, description="Сумма операции")
@@ -9,8 +10,11 @@ class OperationBase(BaseModel):
     category_id: int = Field(..., description="ID категории")
     description: str | None = Field(None, description="Описание операции")
 
-class OperationCreate(OperationBase):
-    occurred_at: datetime = Field(..., description="Время операции")
+class OperationCreate(BaseModel):
+    amount: float
+    category_id: int
+    type: Literal['income', 'expense']
+    occurred_at: datetime
 
 class OperationUpdate(BaseModel):
     amount: Decimal | None = Field(None, gt=0)

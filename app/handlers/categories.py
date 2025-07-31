@@ -14,6 +14,7 @@ from app.keyboards.inline import (
     category_type_selection_keyboard
 )
 from app.middlewares.auth import auth_required
+from app.utils.formatting import format_categories_text
 
 router = Router()
 
@@ -37,21 +38,15 @@ async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession, **kw
         await call.message.edit_text(text, reply_markup=keyboard.as_markup())
         return
 
-    text = "📊 **Ваши категории:**\n\n"
-    
-    if income_categories:
-        text += "💰 *Доходы:*\n"
-        for cat in income_categories:
-            text += f"{cat.icon} {cat.name}\n"
-        text += "\n"
-    
-    if expense_categories:
-        text += "💸 *Расходы:*\n"
-        for cat in expense_categories:
-            text += f"{cat.icon} {cat.name}\n"
+    # Используем функцию из utils
+    text = format_categories_text(income_categories, expense_categories)
     
     keyboard = get_categories_keyboard()
-    await call.message.edit_text(text, reply_markup=keyboard.as_markup(), parse_mode="Markdown")
+    await call.message.edit_text(
+        text, 
+        reply_markup=keyboard.as_markup(), 
+        parse_mode="HTML"
+    )
 
 @router.callback_query(F.data == "edit_categories")
 @auth_required

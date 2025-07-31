@@ -273,8 +273,7 @@ def edit_category_actions_keyboard(category_id: int) -> InlineKeyboardBuilder:
     kb = InlineKeyboardBuilder()
     kb.button(text="🗑️ Удалить категорию", callback_data=f"delete_category:{category_id}")
     kb.button(text="🔙 Назад к списку", callback_data="edit_categories")
-    kb.button(text="🏠 Главное меню", callback_data="categories_menu")
-    kb.adjust(1, 1, 1)
+    kb.adjust(1, 1)
     return kb
 
 def delete_category_confirmation_keyboard(category_id: int) -> InlineKeyboardBuilder:
@@ -293,3 +292,16 @@ def category_type_selection_keyboard() -> InlineKeyboardBuilder:
     kb.button(text="🔙 Назад", callback_data="categories_menu")
     kb.adjust(2, 1)
     return kb
+    
+def balance_keyboard() -> InlineKeyboardMarkup:
+    """
+    Клавиатура для экрана баланса:
+    🔙 Назад — возврат в главное меню
+    🕑 История — показать последние 10 операций
+    """
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🕑 История", callback_data="history"),
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
+        ]
+    ])
