@@ -40,13 +40,13 @@ async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession, **kw
     text = "📊 **Ваши категории:**\n\n"
     
     if income_categories:
-        text += "💰 **Доходы:**\n"
+        text += "💰 <b>Доходы:</b>\n"
         for cat in income_categories:
             text += f"{cat.icon} {cat.name}\n"
         text += "\n"
     
     if expense_categories:
-        text += "💸 **Расходы:**\n"
+        text += "💸 <b>Расходы:</b>\n"
         for cat in expense_categories:
             text += f"{cat.icon} {cat.name}\n"
     
@@ -254,49 +254,3 @@ async def process_category_type(call: CallbackQuery, user, state: FSMContext, db
         await call.message.edit_text(f"❌ Ошибка при создании категории: {str(e)}")
     
     await state.clear()
-
-@router.callback_query(F.data == "categories_income")
-@auth_required
-async def show_income_categories(call: CallbackQuery, user, db: AsyncSession):
-    """Показать категории доходов"""
-    categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=True)
-    
-    if not categories:
-        await call.message.edit_text(
-            "💰 У вас пока нет категорий доходов",
-            reply_markup=get_back_keyboard().as_markup()
-        )
-        return
-    
-    text = "💰 **Категории доходов:**\n\n"
-    for cat in categories:
-        text += f"{cat.icon} {cat.name}\n"
-    
-    await call.message.edit_text(
-        text,
-        reply_markup=get_back_keyboard().as_markup(),
-        parse_mode="Markdown"
-    )
-
-@router.callback_query(F.data == "categories_expenses")
-@auth_required
-async def show_expense_categories(call: CallbackQuery, user, db: AsyncSession):
-    """Показать категории расходов"""
-    categories = await CategoryCRUD.get_user_categories(db, user.id, is_income=False)
-    
-    if not categories:
-        await call.message.edit_text(
-            "💸 У вас пока нет категорий расходов",
-            reply_markup=get_back_keyboard().as_markup()
-        )
-        return
-    
-    text = "💸 **Категории расходов:**\n\n"
-    for cat in categories:
-        text += f"{cat.icon} {cat.name}\n"
-    
-    await call.message.edit_text(
-        text,
-        reply_markup=get_back_keyboard().as_markup(),
-        parse_mode="Markdown"
-    )

@@ -36,12 +36,9 @@ def get_categories_keyboard() -> InlineKeyboardBuilder:
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ Добавить категорию", callback_data="add_category")
     kb.button(text="✏️ Редактировать", callback_data="edit_categories")
-    kb.button(text="💰 Категории доходов", callback_data="categories_income")
-    kb.button(text="💸 Категории расходов", callback_data="categories_expenses")
-    kb.button(text="🔙 Назад", callback_data="main_menu")
+    kb.button(text="🔙 Назад", callback_data="back_to_main")
     
-    # Первые 4 кнопки в 2 столбца, последняя отдельно
-    kb.adjust(2, 2, 1)
+    kb.adjust(2, 1)
     
     return kb
 

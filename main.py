@@ -65,11 +65,11 @@ def setup_handlers():
     
     # Роутеры
     dp.include_router(start_router)
+    dp.include_router(categories_router)
     dp.include_router(help_router)
     dp.include_router(balance_router)
     dp.include_router(operations_router)
     dp.include_router(reports_router)
-    dp.include_router(categories_router)
     dp.include_router(settings_router)
     dp.include_router(cancel_router)
     
