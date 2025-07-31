@@ -40,13 +40,13 @@ async def show_categories_menu(call: CallbackQuery, user, db: AsyncSession, **kw
     text = "📊 **Ваши категории:**\n\n"
     
     if income_categories:
-        text += "💰 <b>Доходы:</b>\n"
+        text += "💰 *Доходы:*\n"
         for cat in income_categories:
             text += f"{cat.icon} {cat.name}\n"
         text += "\n"
     
     if expense_categories:
-        text += "💸 <b>Расходы:</b>\n"
+        text += "💸 *Расходы:*\n"
         for cat in expense_categories:
             text += f"{cat.icon} {cat.name}\n"
     
